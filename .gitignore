@@ -1,0 +1,42 @@
+# Rust build artifacts
+/target/
+/target_*/
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+*.log.*
+titan_bridge.log
+
+# Temporary files
+*.tmp
+*.temp
+*.out
+check.out
+
+# Build tools (extracted binaries/tools)
+cmake.zip
+protoc.zip
+cmake_bin/
+protoc_bin/
+
+# Third party build artifacts
+third_party/**/build/
+third_party/**/install/
+
+# Generated protobuf files (kept in OUT_DIR, not src)
+/src/pb/
+
+# Config overrides (user-specific)
+config/*.local.json

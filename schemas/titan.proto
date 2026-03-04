@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+// Standardized Agnostic Binary Interface for Titan Protocol
+// Consumer-decoupled schemas allowing DuckDB, Svelte, or Python integration.
+
+package titan.marketdata;
+
+message TickStream {
+    uint32 symbol_id = 1;
+    int64 timestamp_ms = 2; // Milliseconds from epoch
+    double bid = 3;
+    double ask = 4;
+    double last = 5;
+    uint64 volume = 6;
+    uint64 sequence_id = 7;
+    uint32 crc32 = 8;
+}
+
+message DomLevel {
+    double price = 1;
+    uint64 volume = 2;
+}
+
+message DepthOfMarket {
+    uint32 symbol_id = 1;
+    int64 timestamp_ms = 2;
+    repeated DomLevel bids = 3;
+    repeated DomLevel asks = 4;
+}
+
+message SymbolMetadata {
+    uint32 symbol_id = 1;
+    double contract_size = 2;
+    double point_value = 3;
+    uint32 digits = 4;
+    int64 execution_mode = 5;
+}

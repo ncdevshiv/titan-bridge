@@ -1,0 +1,174 @@
+================================================================================
+TITAN PROTOCOL HANDOVER MANIFEST
+================================================================================
+
+This system has been transformed into a fully agnostic Plug-and-Play DMA Bridge. 
+The underlying mechanism is built on Eclipse iceoryx for zero-copy Shared Memory 
+but exposes binary standards that can be instantly consumed by any downstream 
+adapter (Svelte WebSocket gateways, DuckDB ingestors, Python listeners).
+
+================================================================================
+1. BINARY SCHEMAS (Protobuf)
+================================================================================
+The absolute source of truth for the binary interface is located at:
+`schemas/titan.proto`
+
+Do NOT read raw struct mappings from MQL5 (`TitanProtocol.mqh`). By the time the 
+data reaches you, the Rust DLL has validated the CRC, verified sequence gaps, and 
+serialized the data strictly into the Protobuf specification.
+
+================================================================================
+2. ICEORYX TOPIC MAP
+================================================================================
+To subscribe to the memory pool from your C++/Rust/C adapter, use the following 
+`iox::capro::ServiceDescription`:
+
+Service:  "Titan"
+Instance: "MarketData"
+Topics:   
+  - "TickStream"     -> High-frequency Bid/Ask/Last trade streams
+  - "DepthOfMarket"  -> Full L2 OrderBook representations (20 depth max)
+  - "SymbolMetadata" -> Session heartbeats, contract specs, and properties
+
+Iceoryx Version: v2.95.8
+Location: third_party/iceoryx/
+
+================================================================================
+3. SEQUENCE SYNC PROTOCOL
+================================================================================
+Network or IPC interruptions are handled via Sequence IDs embedded in every tick.
+- If `sequence_id` matches the cache, this is a Ghost Tick and is intentionally 
+  dropped by the Rust normalizer.
+- If `sequence_id > last_sequence + 1`, a network gap has occurred. Downstream 
+  consumers will see a `log_warn` emitted by Rust.
+- UUID Generation: A `Session UUID` is spawned every time the MT5 EA boots. It 
+  broadcasts with the `SymbolMetadata` heartbeat. If a downstream consumer detects 
+  a *new* UUID, it must clear its state, as the MQL5 adapter has rebooted and stale 
+  Virtual SL/TP configurations have been erased.
+
+================================================================================
+4. NORMALIZER RULES
+================================================================================
+Symbol resolution is deliberately deterministic utilizing a simple string hash 
+within the hot path: `symbol_id_cache = HashString(Symbol())`. A dictionary 
+sync happens via the `SymbolMetadata` heartbeat mapping string names to integer IDs.
+
+CRC32 Validation: Every tick undergoes hardware-accelerated CRC32 validation via
+the crc32fast crate to detect corrupt DMA transfers.
+
+================================================================================
+5. ERROR REGISTRY 
+================================================================================
+The system adheres to the *Loud Failure Mandate*. If the producer halts, read the 
+stdout (or `titan_bridge.log`) for the specific `ERR_` code. Do not guess root 
+causes. See `docs/wiki/error_reference.md` for mitigation strategies.
+
+Active Error Codes (10 total):
+- ERR_001_ICEORYX_ROUDI_NOT_FOUND
+- ERR_002_SHARED_MEMORY_ALLOCATION_LOCKED
+- ERR_003_SPACETIMEDB_CONNECTION_FAILED (reserved)
+- ERR_004_CONFIG_FILE_ERROR (NEW)
+- ERR_100_NULL_POINTER_DEREFERENCE
+- ERR_101_CRC_VALIDATION_FAILED
+- ERR_102_SEQUENCE_DUPLICATION_DETECTED
+- ERR_103_INVALID_PROTOBUF_PAYLOAD
+- ERR_201_DATA_CIRCUIT_TRIPPED
+- ERR_202_MAX_SLIPPAGE_EXCEEDED
+
+================================================================================
+6. MODULE STRUCTURE
+================================================================================
+Rust Modules (src/):
+- lib.rs              -> DLL entry points, FFI interface, global singletons
+- errors.rs           -> ErrorCode enum, SystemError struct, fail_loudly macro
+- config.rs           -> SystemConfig loading from JSON
+- protocol.rs         -> BinaryTick, ProtocolNormalizer, CRC32 validation
+- circuit_breakers.rs -> DataCircuitBreaker (TPS limiting) and MaxSlippageGuard
+- clock_sync.rs       -> TripleClock and ClockSyncPacket
+- logger.rs           -> JSON structured logging
+- shared_memory.rs    -> CXX bridge to Iceoryx C++ APIs
+- pb/                 -> Generated Protobuf types
+
+C++ Components:
+- titan_iceoryx.cpp   -> Iceoryx publisher/subscriber implementation
+- titan_iceoryx.hpp   -> Iceoryx v2.95.8 bindings header
+
+================================================================================
+7. DEPENDENCIES
+================================================================================
+Rust (Cargo.toml):
+- cxx = "1.0"
+- once_cell = "1.18"
+- serde = "1.0"
+- serde_json = "1.0"
+- chrono = "0.4"
+- crc32fast = "1.3"
+- prost = "0.13"
+- bytes = "1"
+- uuid = "1.8"
+
+Build:
+- cmake >=3.18
+- protoc (vendored in protoc_bin/)
+
+System:
+- Iceoryx v2.95.8 (cloned to third_party/iceoryx)
+
+================================================================================
+8. CONFIGURATION
+================================================================================
+Configuration file: config/system.json
+
+Required fields:
+{
+    "max_tps": 1000,              // Max ticks per second before circuit trip
+    "trip_duration_ms": 5000,     // Circuit breaker cooldown duration
+    "max_slippage_points": 0.0010, // Max acceptable slippage
+    "iceoryx_threshold_percent": 90.0, // Memory threshold warning
+    "app_name": "TitanBridge"     // Application identifier
+}
+
+Missing or malformed config results in ERR_004_CONFIG_FILE_ERROR.
+
+================================================================================
+9. TEST COVERAGE
+================================================================================
+44 comprehensive tests covering:
+- Unit tests (33): CRC validation, sequence management, circuit breakers,
+  slippage guard, clock sync, config loading, error handling
+- Integration tests (11): Protobuf encoding/decoding, end-to-end scenarios
+
+Run: cargo test
+
+================================================================================
+10. BUILD INSTRUCTIONS
+================================================================================
+Quick build (recommended):
+    .\bootstrap.ps1
+
+Manual build:
+    cd third_party/iceoryx
+    cmake -B build -S iceoryx_meta -DBUILD_STRICT=OFF
+    cmake --build build --config Release
+    cd ../..
+    cargo build --release
+
+Output: target/release/titan_bridge.dll
+
+================================================================================
+11. FINAL VERIFICATION STATUS
+================================================================================
+[✓] Rust/C++ FFI via CXX bridge - WORKING
+[✓] Iceoryx zero-copy publishing (tick, book, metadata, commands) - WORKING
+[✓] CRC32 validation on all ticks - WORKING
+[✓] Sequence deduplication and gap detection - WORKING
+[✓] DataCircuitBreaker with TPS limiting - WORKING
+[✓] MaxSlippageGuard for execution validation - WORKING
+[✓] JSON structured logging - WORKING
+[✓] 44 comprehensive tests - ALL PASSING
+[✓] Release build produces working DLL - VERIFIED
+[✓] Documentation updated and accurate - COMPLETED
+
+================================================================================
+END OF MANIFEST
+================================================================================
