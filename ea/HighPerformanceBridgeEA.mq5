@@ -6,9 +6,9 @@
 #property link      ""
 #property version   "1.01"
 
-#include "Include\IceoryxMemPool.mqh"
-#include "Include\ParallelEngine.mqh"
-#include "Include\Diagnostics.mqh"
+#include <TitanBridge\IceoryxMemPool.mqh>
+#include <TitanBridge\ParallelEngine.mqh>
+#include <TitanBridge\Diagnostics.mqh>
 
 input int DOM_Depth = 20;
 

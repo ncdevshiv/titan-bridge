@@ -3,7 +3,7 @@
 //|                                       Titan Protocol Architecture|
 //+------------------------------------------------------------------+
 #property strict
-#include "IceoryxMemPool.mqh"
+#include <TitanBridge\IceoryxMemPool.mqh>
 
 class CDiagnostics {
 private:
@@ -14,14 +14,14 @@ public:
       session_uuid = GenerateUUID();
    }
    
-   string GetSessionUUID() const {
+   string GetSessionUUID() {
       return session_uuid;
    }
    
-   void BroadcastHeartbeat(uint symbol_id_cache) {
+   void BroadcastHeartbeat(uint symbol_id_param) {
       // Construction of actual binary heartbeat packet to remove stub
       MetadataPacket pkt;
-      pkt.symbol_id = symbol_id_cache;
+      pkt.symbol_id = symbol_id_param;
       pkt.contract_size = SymbolInfoDouble(Symbol(), SYMBOL_TRADE_CONTRACT_SIZE);
       pkt.point_value = SymbolInfoDouble(Symbol(), SYMBOL_TRADE_TICK_VALUE);
       pkt.digits = (uint)SymbolInfoInteger(Symbol(), SYMBOL_DIGITS);
